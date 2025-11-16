@@ -28,9 +28,17 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get all connections for this user
-    const connections = await composio.connectedAccounts.list({
+    const response = await composio.connectedAccounts.list({
       userIds: [userId],
     });
+
+    // Handle different response structures - could be array or object with items
+    let connections: unknown[] = [];
+    if (Array.isArray(response)) {
+      connections = response;
+    } else if (response && typeof response === 'object' && 'items' in response) {
+      connections = (response as { items: unknown[] }).items || [];
+    }
 
     // Create a map of auth config IDs to tool names (reverse lookup)
     const authConfigToTool: Record<string, string> = {};
@@ -44,28 +52,61 @@ export async function GET(request: NextRequest) {
     const connectedTools = new Set<string>();
     const toolConnectionIds: Record<string, string> = {};
     
-    if (connections && Array.isArray(connections)) {
-      connections.forEach((connection: { 
-        id?: string; 
-        authConfigId?: string; 
+    connections.forEach((connection: unknown) => {
+      if (!connection || typeof connection !== 'object') return;
+      
+      const conn = connection as {
+        id?: string;
+        connected_account_id?: string;
+        authConfigId?: string;
         auth_config_id?: string;
+        auth_config?: { id?: string };
         status?: string;
-      }) => {
-        // Check if this connection matches any of our tools
-        const authConfigId = connection.authConfigId || connection.auth_config_id;
-        if (authConfigId && authConfigToTool[authConfigId]) {
-          const tool = authConfigToTool[authConfigId];
-          // Only consider ACTIVE connections as connected
-          // INITIATED connections are pending
-          if (connection.status === 'ACTIVE' || !connection.status) {
-            connectedTools.add(tool);
-            if (connection.id) {
-              toolConnectionIds[tool] = connection.id;
-            }
+      };
+
+      // Extract auth config ID from various possible locations
+      const authConfigId = 
+        conn.authConfigId || 
+        conn.auth_config_id || 
+        conn.auth_config?.id;
+
+      // Extract connection ID from various possible locations
+      const connectionId = 
+        conn.id || 
+        conn.connected_account_id;
+
+      // Extract status
+      const status = conn.status;
+
+      if (authConfigId && authConfigToTool[authConfigId]) {
+        const tool = authConfigToTool[authConfigId];
+        
+        // Only consider ACTIVE connections as connected
+        // INITIATED connections are pending
+        if (status === 'ACTIVE' || (!status && connectionId)) {
+          connectedTools.add(tool);
+          if (connectionId) {
+            toolConnectionIds[tool] = connectionId;
           }
         }
-      });
-    }
+      }
+    });
+
+    // Debug logging (can be removed in production)
+    console.log('Connection status check:', {
+      userId,
+      totalConnections: connections.length,
+      connectedTools: Array.from(connectedTools),
+      connectionIds: toolConnectionIds,
+      rawConnections: connections.map((c: unknown) => {
+        const conn = c as Record<string, unknown>;
+        return {
+          id: conn.id || conn.connected_account_id,
+          authConfigId: conn.authConfigId || conn.auth_config_id || (conn.auth_config as { id?: string })?.id,
+          status: conn.status,
+        };
+      }),
+    });
 
     return NextResponse.json({
       connectedTools: Array.from(connectedTools),

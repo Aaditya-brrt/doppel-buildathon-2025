@@ -100,13 +100,37 @@ function SetupContent() {
           window.removeEventListener('message', messageHandler);
           
           if (event.data.success) {
-            // Refresh connection status to get updated connection IDs
-            const statusResponse = await fetch(`/api/composio/status?user=${encodeURIComponent(userId)}`);
-            if (statusResponse.ok) {
-              const statusData = await statusResponse.json();
-              setConnectedTools(new Set(statusData.connectedTools || []));
-              setConnectionIds(statusData.connectionIds || {});
-            }
+            // Wait a bit for connection to be fully processed, then refresh status
+            // Retry a few times in case the connection isn't immediately ACTIVE
+            let retries = 5;
+            const checkStatus = async (): Promise<boolean> => {
+              const statusResponse = await fetch(`/api/composio/status?user=${encodeURIComponent(userId)}`);
+              if (statusResponse.ok) {
+                const statusData = await statusResponse.json();
+                const hasConnection = statusData.connectedTools?.includes(tool);
+                const connectionId = statusData.connectionIds?.[tool];
+                
+                if (hasConnection && connectionId) {
+                  // Connection is ready with ID
+                  setConnectedTools(new Set(statusData.connectedTools || []));
+                  setConnectionIds(statusData.connectionIds || {});
+                  return true;
+                } else if (retries > 0) {
+                  // Retry after a short delay
+                  retries--;
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  return checkStatus();
+                } else {
+                  // Still not connected after retries, but update anyway
+                  setConnectedTools(new Set(statusData.connectedTools || []));
+                  setConnectionIds(statusData.connectionIds || {});
+                  return false;
+                }
+              }
+              return false;
+            };
+            
+            await checkStatus();
             // Show success message
             alert(`✅ Successfully connected ${tool}!`);
           } else {
