@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
   
-  // Handle app mention
+  // Handle app mention or message events
   if (body.event && typeof body.event === 'object' && 'type' in body.event) {
     const event = body.event as Record<string, unknown>;
     
@@ -63,9 +63,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
     
-    // Only process app_mention events
-    if (event.type === 'app_mention') {
-      logger.slack.info('App mention event detected');
+    // Get bot user ID from authorizations (if available)
+    const botUserId = Array.isArray(body.authorizations) && body.authorizations.length > 0
+      ? (body.authorizations[0] as { user_id?: string })?.user_id
+      : null;
+    
+    // Check if this is an app_mention event
+    const isAppMention = event.type === 'app_mention';
+    
+    // Check if this is a message event that mentions the bot
+    const isMessageWithMention = event.type === 'message' && 
+      typeof event.text === 'string' && 
+      botUserId &&
+      event.text.includes(`<@${botUserId}>`);
+    
+    if (isAppMention || isMessageWithMention) {
+      logger.slack.info('Bot mention detected', { 
+        eventType: event.type,
+        isAppMention,
+        isMessageWithMention,
+        botUserId
+      });
       const mentionEvent = event as unknown as { text: string; channel: string; ts: string; user?: string };
       logger.slack.info('Event details', {
         text: mentionEvent.text,
@@ -80,12 +98,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
     
-    // Log other message types for debugging
-    logger.slack.debug('Received non-app_mention event', { 
+    // For regular message events that don't mention the bot, just ignore silently
+    if (event.type === 'message') {
+      logger.slack.debug('Ignoring regular message event (no bot mention)', { 
+        hasBotId: !!event.bot_id,
+        text: typeof event.text === 'string' ? event.text.substring(0, 100) : undefined
+      });
+      return NextResponse.json({ ok: true });
+    }
+    
+    // Log other event types for debugging
+    logger.slack.debug('Received unhandled event type', { 
       eventType: event.type,
-      hasBotId: !!event.bot_id,
-      text: typeof event.text === 'string' ? event.text.substring(0, 100) : undefined
+      hasBotId: !!event.bot_id
     });
+    return NextResponse.json({ ok: true });
   }
   
   logger.slack.warn('Unhandled request type', { 
