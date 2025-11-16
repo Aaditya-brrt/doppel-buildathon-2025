@@ -42,106 +42,83 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // First, check for existing connections (including INITIATED ones)
-    const response = await composio.connectedAccounts.list({
-      userIds: [userId],
-    });
-
-    // Handle different response structures
-    let existingConnections: unknown[] = [];
-    if (Array.isArray(response)) {
-      existingConnections = response;
-    } else if (response && typeof response === 'object' && 'items' in response) {
-      existingConnections = (response as { items: unknown[] }).items || [];
-    }
-
-    // Find any existing connection for this auth config
-    let existingConnection: { id?: string; status?: string; redirectUrl?: string } | null = null;
+    // Initiate a new OAuth connection with allowMultiple: false to prevent duplicates
+    // If a connection already exists, this will throw an error that we can catch
+    let connectionRequest: ConnectionRequestResponse;
     
-    for (const conn of existingConnections) {
-      if (!conn || typeof conn !== 'object') continue;
+    try {
+      connectionRequest = await composio.connectedAccounts.initiate(
+        userId,
+        authConfigId,
+      ) as ConnectionRequestResponse;
+    } catch (initiateError) {
+      // Check if this is the multiple accounts error
+      const error = initiateError as { code?: string; message?: string };
       
-      const connection = conn as Record<string, unknown>;
-      const connectionId = (connection.id as string) || (connection.connected_account_id as string);
-      const status = connection.status as string | undefined;
-      
-      if (!connectionId) continue;
+      if (error.code === 'TS-SDK::MULTIPLE_CONNECTED_ACCOUNTS' || 
+          (error.message && error.message.includes('Multiple connected accounts'))) {
+        
+        console.log('Multiple connections detected, finding existing connection...');
+        
+        // Get all connections for this user
+        const response = await composio.connectedAccounts.list({
+          userIds: [userId],
+        });
 
-      // Get auth config ID from the connection
-      let connAuthConfigId: string | undefined;
-      try {
-        // Try to get full connection details
-        const fullConnection = await composio.connectedAccounts.get(connectionId);
-        if (fullConnection && typeof fullConnection === 'object') {
-          const fullConn = fullConnection as Record<string, unknown>;
-          connAuthConfigId = 
-            (fullConn.authConfigId as string) ||
-            (fullConn.auth_config_id as string) ||
-            ((fullConn.auth_config as { id?: string })?.id) ||
-            ((fullConn.auth_config as Record<string, unknown>)?.id as string);
+        // Handle different response structures
+        let existingConnections: unknown[] = [];
+        if (Array.isArray(response)) {
+          existingConnections = response;
+        } else if (response && typeof response === 'object' && 'items' in response) {
+          existingConnections = (response as { items: unknown[] }).items || [];
         }
-      } catch {
-        // Fallback to extracting from connection object
-        connAuthConfigId = 
-          (connection.authConfigId as string) ||
-          (connection.auth_config_id as string) ||
-          ((connection.auth_config as { id?: string })?.id) ||
-          ((connection.auth_config as Record<string, unknown>)?.id as string);
-      }
 
-      // Check if this connection matches our auth config
-      if (connAuthConfigId === authConfigId && (status === 'INITIATED' || status === 'ACTIVE')) {
-        existingConnection = {
-          id: connectionId,
-          status,
-        };
-        break;
-      }
-    }
+        // Find the ACTIVE connection for this auth config
+        for (const conn of existingConnections) {
+          if (!conn || typeof conn !== 'object') continue;
+          
+          const connection = conn as Record<string, unknown>;
+          const connectionId = (connection.id as string) || (connection.connected_account_id as string);
+          const status = connection.status as string | undefined;
+          
+          if (!connectionId || status !== 'ACTIVE') continue;
 
-    // If there's an ACTIVE connection, return it (don't try to create a new one)
-    if (existingConnection && existingConnection.status === 'ACTIVE') {
-      return NextResponse.json({
-        redirectUrl: null,
-        connectionRequestId: existingConnection.id,
-        alreadyConnected: true,
-        message: 'Connection already exists',
-      });
-    }
-
-    // If there's an INITIATED connection, try to get its redirect URL
-    if (existingConnection && existingConnection.status === 'INITIATED' && existingConnection.id) {
-      try {
-        // Get the connection request details
-        const connectionRequest = await composio.connectedAccounts.get(existingConnection.id) as ConnectionRequestResponse;
-        if (connectionRequest && connectionRequest.redirectUrl) {
-          return NextResponse.json({
-            redirectUrl: connectionRequest.redirectUrl,
-            connectionRequestId: existingConnection.id,
-            resumed: true,
-          });
-        }
-        // If we can't get redirectUrl, delete the old INITIATED connection
-        await composio.connectedAccounts.delete(existingConnection.id);
-      } catch (err) {
-        console.error('Error getting existing connection:', err);
-        // Try to delete the old connection if possible
-        if (existingConnection.id) {
+          // Get full connection details to check auth config
           try {
-            await composio.connectedAccounts.delete(existingConnection.id);
-          } catch (deleteErr) {
-            console.error('Error deleting old connection:', deleteErr);
+            const fullConnection = await composio.connectedAccounts.get(connectionId);
+            if (fullConnection && typeof fullConnection === 'object') {
+              const fullConn = fullConnection as Record<string, unknown>;
+              const connAuthConfigId = 
+                (fullConn.authConfigId as string) ||
+                (fullConn.auth_config_id as string) ||
+                ((fullConn.auth_config as { id?: string })?.id) ||
+                ((fullConn.auth_config as Record<string, unknown>)?.id as string);
+              
+              if (connAuthConfigId === authConfigId) {
+                // Found the existing connection
+                return NextResponse.json({
+                  redirectUrl: null,
+                  connectionRequestId: connectionId,
+                  alreadyConnected: true,
+                  message: 'Connection already exists',
+                });
+              }
+            }
+          } catch {
+            continue;
           }
         }
-        // Fall through to create a new one
+        
+        // If we get here, we couldn't find the connection, return error
+        return NextResponse.json(
+          { error: 'Multiple connections exist but could not locate the active one. Please contact support.' },
+          { status: 500 }
+        );
       }
+      
+      // If it's a different error, throw it
+      throw initiateError;
     }
-
-    // Initiate a new OAuth connection
-    const connectionRequest = await composio.connectedAccounts.initiate(
-      userId,
-      authConfigId,
-    ) as ConnectionRequestResponse;
 
     // Return JSON with redirectUrl and connectionRequestId for popup flow
     if (!connectionRequest.redirectUrl) {
