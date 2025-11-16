@@ -6,7 +6,7 @@ export default function Home() {
       <div className="max-w-4xl w-full">
         <div className="text-center mb-12 lg:mb-16">
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
-            <span className="gradient-purple-text">🤖 Team Agent</span>
+            <span className="gradient-purple-text">🤖 Meet Doppel</span>
           </h1>
           <p className="text-xl sm:text-2xl text-purple-200 font-light leading-relaxed">
             Your AI teammate that works while you sleep
