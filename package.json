@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^1.0.28",
+    "@composio/core": "^0.2.4",
+    "@composio/vercel": "^0.2.16",
     "@slack/web-api": "^7.12.0",
     "ai": "^5.0.93",
     "next": "16.0.3",

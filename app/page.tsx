@@ -23,7 +23,7 @@ export default function Home() {
             <FeatureCard
               icon="🎯"
               title="Answers with Your Data"
-              description="Connected to your Calendar, Slack, Jira, and GitHub for accurate responses."
+              description="Connected to your Calendar, Slack, Linear, and GitHub for accurate responses."
             />
             <FeatureCard
               icon="✅"
