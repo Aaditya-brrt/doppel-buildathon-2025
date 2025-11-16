@@ -2,12 +2,31 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { WebClient } from '@slack/web-api';
-import { deepseek } from '@ai-sdk/deepseek';
-import { generateText } from 'ai';
 import { getAgentData, getAllAgentIds } from '@/lib/demo-data';
 import { logger } from '@/lib/logger';
 
+// Lazy load AI SDK to reduce cold start time
+let deepseekModule: typeof import('@ai-sdk/deepseek') | null = null;
+let generateTextModule: typeof import('ai') | null = null;
+
+async function getDeepSeek() {
+  if (!deepseekModule) {
+    deepseekModule = await import('@ai-sdk/deepseek');
+  }
+  return deepseekModule.deepseek;
+}
+
+async function getGenerateText() {
+  if (!generateTextModule) {
+    generateTextModule = await import('ai');
+  }
+  return generateTextModule.generateText;
+}
+
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+
+// Increase timeout for serverless functions (Vercel default is 10s, max is 60s for Hobby, 300s for Pro)
+export const maxDuration = 60;
 
 // Deduplication: Track processed events to prevent duplicate responses
 const processedEvents = new Set<string>();
@@ -279,13 +298,15 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
     const context = buildContext(agentData, question);
     logger.mention.debug('Context built', { contextLength: context.length });
     
-    // Query DeepSeek using Vercel AI SDK
+    // Query DeepSeek using Vercel AI SDK (lazy loaded)
     logger.llm.info('Calling DeepSeek LLM', { 
       model: 'deepseek-chat',
       questionLength: question.length,
       contextLength: context.length
     });
     const startTime = Date.now();
+    const deepseek = await getDeepSeek();
+    const generateText = await getGenerateText();
     const { text: answer } = await generateText({
       model: deepseek('deepseek-chat'),
       system: `You are an AI assistant representing ${agentData.displayName}. Answer questions based on the provided data about their work. Be helpful and concise. If you don't have enough information, say so.`,
