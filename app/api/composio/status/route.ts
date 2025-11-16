@@ -40,21 +40,36 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // Map connections to tools
+    // Map connections to tools and store connection IDs
     const connectedTools = new Set<string>();
+    const toolConnectionIds: Record<string, string> = {};
     
     if (connections && Array.isArray(connections)) {
-      connections.forEach((connection: { authConfigId?: string; auth_config_id?: string }) => {
+      connections.forEach((connection: { 
+        id?: string; 
+        authConfigId?: string; 
+        auth_config_id?: string;
+        status?: string;
+      }) => {
         // Check if this connection matches any of our tools
         const authConfigId = connection.authConfigId || connection.auth_config_id;
         if (authConfigId && authConfigToTool[authConfigId]) {
-          connectedTools.add(authConfigToTool[authConfigId]);
+          const tool = authConfigToTool[authConfigId];
+          // Only consider ACTIVE connections as connected
+          // INITIATED connections are pending
+          if (connection.status === 'ACTIVE' || !connection.status) {
+            connectedTools.add(tool);
+            if (connection.id) {
+              toolConnectionIds[tool] = connection.id;
+            }
+          }
         }
       });
     }
 
     return NextResponse.json({
       connectedTools: Array.from(connectedTools),
+      connectionIds: toolConnectionIds,
     });
   } catch (error) {
     console.error('Error fetching connection status:', error);

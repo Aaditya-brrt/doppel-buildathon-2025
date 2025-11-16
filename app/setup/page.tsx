@@ -12,7 +12,9 @@ function SetupContent() {
   const error = searchParams.get('error');
   
   const [connectedTools, setConnectedTools] = useState<Set<string>>(new Set());
+  const [connectionIds, setConnectionIds] = useState<Record<string, string>>({});
   const [connectingTool, setConnectingTool] = useState<string | null>(null);
+  const [disconnectingTool, setDisconnectingTool] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
 
   // Fetch connection status on mount
@@ -28,6 +30,7 @@ function SetupContent() {
         if (response.ok) {
           const data = await response.json();
           setConnectedTools(new Set(data.connectedTools || []));
+          setConnectionIds(data.connectionIds || {});
         }
       } catch (err) {
         console.error('Error fetching connection status:', err);
@@ -91,14 +94,19 @@ function SetupContent() {
       }
 
       // Listen for messages from the popup
-      const messageHandler = (event: MessageEvent) => {
+      const messageHandler = async (event: MessageEvent) => {
         // In production, you should verify event.origin for security
         if (event.data.type === 'composio-oauth-complete') {
           window.removeEventListener('message', messageHandler);
           
           if (event.data.success) {
-            // Update connected tools state
-            setConnectedTools(prev => new Set(prev).add(tool));
+            // Refresh connection status to get updated connection IDs
+            const statusResponse = await fetch(`/api/composio/status?user=${encodeURIComponent(userId)}`);
+            if (statusResponse.ok) {
+              const statusData = await statusResponse.json();
+              setConnectedTools(new Set(statusData.connectedTools || []));
+              setConnectionIds(statusData.connectionIds || {});
+            }
             // Show success message
             alert(`✅ Successfully connected ${tool}!`);
           } else {
@@ -124,6 +132,57 @@ function SetupContent() {
       console.error('Error initiating connection:', err);
       alert(err instanceof Error ? err.message : 'Failed to initiate connection. Please try again.');
       setConnectingTool(null);
+    }
+  };
+
+  const handleDisconnect = async (tool: string) => {
+    if (!userId) {
+      alert('User ID is required');
+      return;
+    }
+
+    const connectionId = connectionIds[tool];
+    if (!connectionId) {
+      alert('Connection ID not found');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to disconnect ${tool}?`)) {
+      return;
+    }
+
+    setDisconnectingTool(tool);
+
+    try {
+      const response = await fetch(
+        `/api/composio/disconnect?connectionId=${encodeURIComponent(connectionId)}`,
+        { method: 'DELETE' }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to disconnect');
+      }
+
+      // Update state to remove the connection
+      setConnectedTools(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(tool);
+        return newSet;
+      });
+      
+      setConnectionIds(prev => {
+        const newIds = { ...prev };
+        delete newIds[tool];
+        return newIds;
+      });
+
+      alert(`✅ Successfully disconnected ${tool}!`);
+    } catch (err) {
+      console.error('Error disconnecting:', err);
+      alert(err instanceof Error ? err.message : 'Failed to disconnect. Please try again.');
+    } finally {
+      setDisconnectingTool(null);
     }
   };
 
@@ -167,6 +226,7 @@ function SetupContent() {
             tools.map(tool => {
               const isConnected = connectedTools.has(tool);
               const isConnecting = connectingTool === tool;
+              const isDisconnecting = disconnectingTool === tool;
               
               return (
                 <div 
@@ -183,17 +243,17 @@ function SetupContent() {
                     </p>
                   </div>
                   <button 
-                    onClick={() => handleConnect(tool)}
-                    disabled={isConnecting || isConnected}
+                    onClick={() => isConnected ? handleDisconnect(tool) : handleConnect(tool)}
+                    disabled={isConnecting || isDisconnecting}
                     className={`${
                       isConnected 
-                        ? 'bg-green-500/20 text-green-300 border border-green-500/30 cursor-not-allowed' 
-                        : isConnecting
+                        ? 'bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 hover:border-red-500/50' 
+                        : isConnecting || isDisconnecting
                         ? 'bg-purple-500/50 text-purple-200 cursor-wait'
                         : 'bg-[#8B5CF6] text-white hover:bg-[#7C3AED] hover:shadow-lg hover:shadow-purple-500/30 active:scale-95'
                     } px-6 py-2.5 sm:px-8 sm:py-3 rounded-lg font-medium transition-all duration-300 w-full sm:w-auto`}
                   >
-                    {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Connect'}
+                    {isDisconnecting ? 'Disconnecting...' : isConnecting ? 'Connecting...' : isConnected ? 'Disconnect' : 'Connect'}
                   </button>
                 </div>
               );

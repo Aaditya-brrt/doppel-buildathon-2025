@@ -42,13 +42,63 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Initiate the OAuth connection
+    // First, check for existing connections (including INITIATED ones)
+    const existingConnections = await composio.connectedAccounts.list({
+      userIds: [userId],
+    });
+
+    // Find any existing connection for this auth config (including INITIATED state)
+    let existingConnection: { id?: string; status?: string; redirectUrl?: string } | null = null;
+    if (existingConnections && Array.isArray(existingConnections)) {
+      existingConnection = existingConnections.find(
+        (conn: { authConfigId?: string; auth_config_id?: string; status?: string }) => {
+          const connAuthConfigId = conn.authConfigId || conn.auth_config_id;
+          return connAuthConfigId === authConfigId && 
+                 (conn.status === 'INITIATED' || conn.status === 'ACTIVE');
+        }
+      ) || null;
+    }
+
+    // If there's an INITIATED connection, try to get its redirect URL
+    if (existingConnection && existingConnection.status === 'INITIATED' && existingConnection.id) {
+      try {
+        // Get the connection request details
+        const connectionRequest = await composio.connectedAccounts.get(existingConnection.id) as ConnectionRequestResponse;
+        if (connectionRequest && connectionRequest.redirectUrl) {
+          return NextResponse.json({
+            redirectUrl: connectionRequest.redirectUrl,
+            connectionRequestId: existingConnection.id,
+            resumed: true,
+          });
+        }
+        // If we can't get redirectUrl, delete the old INITIATED connection
+        await composio.connectedAccounts.delete(existingConnection.id);
+      } catch (err) {
+        console.error('Error getting existing connection:', err);
+        // Try to delete the old connection if possible
+        if (existingConnection.id) {
+          try {
+            await composio.connectedAccounts.delete(existingConnection.id);
+          } catch (deleteErr) {
+            console.error('Error deleting old connection:', deleteErr);
+          }
+        }
+        // Fall through to create a new one
+      }
+    }
+
+    // If there's an ACTIVE connection, return error (should disconnect first)
+    if (existingConnection && existingConnection.status === 'ACTIVE') {
+      return NextResponse.json(
+        { error: 'Connection already exists. Please disconnect first.' },
+        { status: 400 }
+      );
+    }
+
+    // Initiate a new OAuth connection
     const connectionRequest = await composio.connectedAccounts.initiate(
       userId,
       authConfigId,
-    //   {
-    //     callbackUrl,
-    //   }
     ) as ConnectionRequestResponse;
 
     // Return JSON with redirectUrl and connectionRequestId for popup flow
