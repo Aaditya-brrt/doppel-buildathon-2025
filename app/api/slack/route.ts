@@ -2,11 +2,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { WebClient } from '@slack/web-api';
-import OpenAI from 'openai';
+import { deepseek } from '@ai-sdk/deepseek';
+import { generateText } from 'ai';
 import { getAgentData } from '@/lib/demo-data';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -113,24 +113,14 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
     // Build context for AI
     const context = buildContext(agentData, question);
     
-    // Query OpenAI
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an AI assistant representing ${agentData.displayName}. Answer questions based on the provided data about their work. Be helpful and concise. If you don't have enough information, say so.`
-        },
-        {
-          role: 'user',
-          content: context
-        }
-      ],
-      max_tokens: 300,
+    // Query DeepSeek using Vercel AI SDK
+    const { text: answer } = await generateText({
+      model: deepseek('deepseek-chat'),
+      system: `You are an AI assistant representing ${agentData.displayName}. Answer questions based on the provided data about their work. Be helpful and concise. If you don't have enough information, say so.`,
+      prompt: context,
+      maxOutputTokens: 300,
       temperature: 0.7
     });
-    
-    const answer = completion.choices[0].message.content || 'Sorry, I couldn\'t generate an answer.';
     
     // Calculate sources
     const sources = [];
