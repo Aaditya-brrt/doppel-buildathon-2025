@@ -71,10 +71,13 @@ export async function POST(request: NextRequest) {
   // Handle slash command
   if (body.command === '/setup-agent') {
     logger.slack.info('Slash command detected', { command: body.command });
+    // Process the command (sends ephemeral message to user)
     await handleSetupCommand({
       user_id: String(body.user_id || ''),
       channel_id: String(body.channel_id || '')
     });
+    // Return HTTP response to Slack (required - not visible to user)
+    // The user only sees the ephemeral message from handleSetupCommand
     return NextResponse.json({ ok: true });
   }
   
@@ -183,7 +186,7 @@ async function handleSetupCommand(body: { user_id: string; channel_id: string })
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '*🤖 Set Up Your AI Agent*\n\nConnect your accounts so teammates can ask your agent questions while you\'re offline.'
+          text: '*Set Up Your AI Agent*\n\nConnect your accounts so teammates can ask your agent questions while you\'re offline.'
         }
       },
       {
@@ -249,7 +252,7 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
     await slack.chat.postMessage({
       channel,
       thread_ts: threadTs,
-      text: `😕 @${userInfo.user?.name} hasn't set up their agent yet. They can use \`/setup-agent\` to get started!`
+      text: `@${userInfo.user?.name} hasn't set up their agent yet. They can use \`/setup-agent\` to get started!`
     });
     return;
   }
@@ -259,7 +262,7 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
     displayName: agentData.displayName,
     hasCalendar: agentData.data.calendar.length > 0,
     hasSlack: agentData.data.slack.length > 0,
-    hasJira: agentData.data.jira.length > 0
+    hasJira: agentData.data.linear.length > 0
   });
   
   // Show thinking message
@@ -302,7 +305,7 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
     const sources = [];
     if (agentData.data.calendar.length > 0) sources.push('Calendar');
     if (agentData.data.slack.length > 0) sources.push('Slack');
-    if (agentData.data.jira.length > 0) sources.push('Jira');
+    if (agentData.data.linear.length > 0) sources.push('Linear');
     
     logger.mention.debug('Updating Slack message with answer');
     // Update message with answer
@@ -343,7 +346,7 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
     await slack.chat.update({
       channel,
       ts: thinkingMsg.ts!,
-      text: '❌ Sorry, I encountered an error. Please try again.'
+      text: 'Sorry, I encountered an error. Please try again.'
     });
   }
 }
@@ -373,7 +376,7 @@ function parseMessage(text: string): { targetUserId: string | null; question: st
   return { targetUserId, question };
 }
 
-function buildContext(agentData: { displayName: string; data: { calendar: string[]; slack: string[]; jira: string[] } }, question: string): string {
+function buildContext(agentData: { displayName: string; data: { calendar: string[]; slack: string[]; linear: string[] } }, question: string): string {
   let context = `Based on the following information about ${agentData.displayName}, answer this question: "${question}"\n\n`;
   
   if (agentData.data.calendar.length > 0) {
@@ -384,8 +387,8 @@ function buildContext(agentData: { displayName: string; data: { calendar: string
     context += `**Recent Slack Messages:**\n${agentData.data.slack.map((m: string) => `- ${m}`).join('\n')}\n\n`;
   }
   
-  if (agentData.data.jira.length > 0) {
-    context += `**Jira Tickets:**\n${agentData.data.jira.map((t: string) => `- ${t}`).join('\n')}\n\n`;
+    if (agentData.data.linear.length > 0) {
+    context += `**Linear Tickets:**\n${agentData.data.linear.map((t: string) => `- ${t}`).join('\n')}\n\n`;
   }
   
   return context;

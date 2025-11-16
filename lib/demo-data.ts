@@ -6,7 +6,7 @@ export interface AgentData {
     data: {
       calendar: string[];
       slack: string[];
-      jira: string[];
+      linear: string[];
     };
   }
   
@@ -33,7 +33,7 @@ export interface AgentData {
           '[#general] Out of office tomorrow afternoon',
           '[#backend] Fixed the performance issue in production'
         ],
-        jira: [
+        linear: [
           'PROJ-123: Implement OAuth 2.0 authentication (In Progress)',
           'PROJ-124: Fix mobile responsiveness on login page (Done)',
           'PROJ-125: Add rate limiting to API endpoints (To Do)',
@@ -57,7 +57,7 @@ export interface AgentData {
           '[#product] User feedback from last week\'s interviews',
           '[#general] Working from home today'
         ],
-        jira: [
+        linear: [
           'PROJ-200: Homepage redesign (In Review)',
           'PROJ-201: Mobile app icon refresh (Done)',
           'PROJ-202: Design system documentation (In Progress)'
