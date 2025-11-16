@@ -16,9 +16,9 @@ export interface AgentData {
   // 2. Click "More" → "Copy member ID"
   
   export const DEMO_AGENTS: Record<string, AgentData> = {
-    'U12345': {  // REPLACE THIS with your Slack user ID
-      name: 'john',
-      displayName: 'John Smith',
+    'U09T6ATEQCS': {  // REPLACE THIS with your Slack user ID
+      name: 'bob',
+      displayName: 'bob',
       data: {
         calendar: [
           'Mon 2pm: Sprint Planning Meeting',
