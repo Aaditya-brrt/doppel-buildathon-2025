@@ -74,7 +74,19 @@ function SetupContent() {
       }
 
       const data = await response.json();
-      const { redirectUrl } = data;
+      const { redirectUrl, alreadyConnected } = data;
+
+      // If already connected, just refresh the status
+      if (alreadyConnected) {
+        const statusResponse = await fetch(`/api/composio/status?user=${encodeURIComponent(userId)}`);
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          setConnectedTools(new Set(statusData.connectedTools || []));
+          setConnectionIds(statusData.connectionIds || {});
+        }
+        setConnectingTool(null);
+        return;
+      }
 
       if (!redirectUrl) {
         throw new Error('No redirect URL received');

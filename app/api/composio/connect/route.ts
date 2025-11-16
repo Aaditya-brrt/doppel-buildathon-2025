@@ -43,20 +43,70 @@ export async function GET(request: NextRequest) {
 
   try {
     // First, check for existing connections (including INITIATED ones)
-    const existingConnections = await composio.connectedAccounts.list({
+    const response = await composio.connectedAccounts.list({
       userIds: [userId],
     });
 
-    // Find any existing connection for this auth config (including INITIATED state)
+    // Handle different response structures
+    let existingConnections: unknown[] = [];
+    if (Array.isArray(response)) {
+      existingConnections = response;
+    } else if (response && typeof response === 'object' && 'items' in response) {
+      existingConnections = (response as { items: unknown[] }).items || [];
+    }
+
+    // Find any existing connection for this auth config
     let existingConnection: { id?: string; status?: string; redirectUrl?: string } | null = null;
-    if (existingConnections && Array.isArray(existingConnections)) {
-      existingConnection = existingConnections.find(
-        (conn: { authConfigId?: string; auth_config_id?: string; status?: string }) => {
-          const connAuthConfigId = conn.authConfigId || conn.auth_config_id;
-          return connAuthConfigId === authConfigId && 
-                 (conn.status === 'INITIATED' || conn.status === 'ACTIVE');
+    
+    for (const conn of existingConnections) {
+      if (!conn || typeof conn !== 'object') continue;
+      
+      const connection = conn as Record<string, unknown>;
+      const connectionId = (connection.id as string) || (connection.connected_account_id as string);
+      const status = connection.status as string | undefined;
+      
+      if (!connectionId) continue;
+
+      // Get auth config ID from the connection
+      let connAuthConfigId: string | undefined;
+      try {
+        // Try to get full connection details
+        const fullConnection = await composio.connectedAccounts.get(connectionId);
+        if (fullConnection && typeof fullConnection === 'object') {
+          const fullConn = fullConnection as Record<string, unknown>;
+          connAuthConfigId = 
+            (fullConn.authConfigId as string) ||
+            (fullConn.auth_config_id as string) ||
+            ((fullConn.auth_config as { id?: string })?.id) ||
+            ((fullConn.auth_config as Record<string, unknown>)?.id as string);
         }
-      ) || null;
+      } catch {
+        // Fallback to extracting from connection object
+        connAuthConfigId = 
+          (connection.authConfigId as string) ||
+          (connection.auth_config_id as string) ||
+          ((connection.auth_config as { id?: string })?.id) ||
+          ((connection.auth_config as Record<string, unknown>)?.id as string);
+      }
+
+      // Check if this connection matches our auth config
+      if (connAuthConfigId === authConfigId && (status === 'INITIATED' || status === 'ACTIVE')) {
+        existingConnection = {
+          id: connectionId,
+          status,
+        };
+        break;
+      }
+    }
+
+    // If there's an ACTIVE connection, return it (don't try to create a new one)
+    if (existingConnection && existingConnection.status === 'ACTIVE') {
+      return NextResponse.json({
+        redirectUrl: null,
+        connectionRequestId: existingConnection.id,
+        alreadyConnected: true,
+        message: 'Connection already exists',
+      });
     }
 
     // If there's an INITIATED connection, try to get its redirect URL
@@ -85,14 +135,6 @@ export async function GET(request: NextRequest) {
         }
         // Fall through to create a new one
       }
-    }
-
-    // If there's an ACTIVE connection, return error (should disconnect first)
-    if (existingConnection && existingConnection.status === 'ACTIVE') {
-      return NextResponse.json(
-        { error: 'Connection already exists. Please disconnect first.' },
-        { status: 400 }
-      );
     }
 
     // Initiate a new OAuth connection

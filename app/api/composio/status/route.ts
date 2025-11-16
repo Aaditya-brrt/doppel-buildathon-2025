@@ -52,45 +52,62 @@ export async function GET(request: NextRequest) {
     const connectedTools = new Set<string>();
     const toolConnectionIds: Record<string, string> = {};
     
-    connections.forEach((connection: unknown) => {
-      if (!connection || typeof connection !== 'object') return;
+    // Process connections - may need to get full details for each
+    for (const connection of connections) {
+      if (!connection || typeof connection !== 'object') continue;
       
-      const conn = connection as {
-        id?: string;
-        connected_account_id?: string;
-        authConfigId?: string;
-        auth_config_id?: string;
-        auth_config?: { id?: string };
-        status?: string;
-      };
-
-      // Extract auth config ID from various possible locations
-      const authConfigId = 
-        conn.authConfigId || 
-        conn.auth_config_id || 
-        conn.auth_config?.id;
-
-      // Extract connection ID from various possible locations
+      const conn = connection as Record<string, unknown>;
+      
+      // Extract connection ID first
       const connectionId = 
-        conn.id || 
-        conn.connected_account_id;
+        (conn.id as string) || 
+        (conn.connected_account_id as string);
+
+      if (!connectionId) continue;
 
       // Extract status
-      const status = conn.status;
+      const status = conn.status as string | undefined;
+
+      // Only process ACTIVE connections
+      if (status !== 'ACTIVE') continue;
+
+      // Try to get full connection details to get auth_config.id
+      let authConfigId: string | undefined;
+      try {
+        const fullConnection = await composio.connectedAccounts.get(connectionId);
+        if (fullConnection && typeof fullConnection === 'object') {
+          const fullConn = fullConnection as Record<string, unknown>;
+          // Try various ways to get auth config ID
+          authConfigId = 
+            (fullConn.authConfigId as string) ||
+            (fullConn.auth_config_id as string) ||
+            ((fullConn.auth_config as { id?: string })?.id) ||
+            ((fullConn.auth_config as Record<string, unknown>)?.id as string);
+        }
+      } catch {
+        // If get() fails, try to extract from the connection object directly
+        authConfigId = 
+          (conn.authConfigId as string) ||
+          (conn.auth_config_id as string) ||
+          ((conn.auth_config as { id?: string })?.id) ||
+          ((conn.auth_config as Record<string, unknown>)?.id as string);
+      }
+
+      // If still no authConfigId, try one more time with the original connection
+      if (!authConfigId) {
+        authConfigId = 
+          (conn.authConfigId as string) ||
+          (conn.auth_config_id as string) ||
+          ((conn.auth_config as { id?: string })?.id) ||
+          ((conn.auth_config as Record<string, unknown>)?.id as string);
+      }
 
       if (authConfigId && authConfigToTool[authConfigId]) {
         const tool = authConfigToTool[authConfigId];
-        
-        // Only consider ACTIVE connections as connected
-        // INITIATED connections are pending
-        if (status === 'ACTIVE' || (!status && connectionId)) {
-          connectedTools.add(tool);
-          if (connectionId) {
-            toolConnectionIds[tool] = connectionId;
-          }
-        }
+        connectedTools.add(tool);
+        toolConnectionIds[tool] = connectionId;
       }
-    });
+    }
 
     // Debug logging (can be removed in production)
     console.log('Connection status check:', {
