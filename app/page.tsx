@@ -18,7 +18,7 @@ export default function Home() {
             <FeatureCard
               icon="⏰"
               title="Works Across Time Zones"
-              description="Your team in India can get answers at 2am your time. No more 8-hour delays."
+              description="Your team halfway across the globe can give answers at any time. No more 8-hour delays."
             />
             <FeatureCard
               icon="🎯"
