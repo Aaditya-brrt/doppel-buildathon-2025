@@ -3,8 +3,9 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 
-export default function SetupPage() {
+function SetupContent() {
   const searchParams = useSearchParams();
   const userId = searchParams.get('user');
 
@@ -46,5 +47,20 @@ export default function SetupPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SetupPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+        <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+          <h1 className="text-4xl font-bold mb-4">🤖 Your AI Agent</h1>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <SetupContent />
+    </Suspense>
   );
 }
