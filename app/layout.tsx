@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Team Agent - Your AI Teammate",
+  title: "DoppelAI - Your AI Teammate",
   description: "Your AI teammate that works while you sleep",
 };
 
