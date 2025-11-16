@@ -9,6 +9,35 @@ import { logger } from '@/lib/logger';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
+// Deduplication: Track processed events to prevent duplicate responses
+const processedEvents = new Set<string>();
+const MAX_CACHE_SIZE = 1000;
+const CACHE_TTL = 60000; // 60 seconds
+
+function getEventKey(event: { channel: string; ts: string; user?: string }): string {
+  return `${event.channel}:${event.ts}:${event.user || 'unknown'}`;
+}
+
+function isEventProcessed(eventKey: string): boolean {
+  return processedEvents.has(eventKey);
+}
+
+function markEventProcessed(eventKey: string): void {
+  // Clean up old entries if cache is too large
+  if (processedEvents.size >= MAX_CACHE_SIZE) {
+    const firstKey = processedEvents.values().next().value;
+    if (firstKey) {
+      processedEvents.delete(firstKey);
+    }
+  }
+  processedEvents.add(eventKey);
+  
+  // Auto-cleanup after TTL (simple approach - in production, use a proper cache with TTL)
+  setTimeout(() => {
+    processedEvents.delete(eventKey);
+  }, CACHE_TTL);
+}
+
 export async function POST(request: NextRequest) {
   logger.slack.info('Received POST request');
   let body: Record<string, unknown>;
@@ -54,11 +83,13 @@ export async function POST(request: NextRequest) {
     const event = body.event as Record<string, unknown>;
     
     // Ignore bot messages (including our own bot's messages)
-    if (event.bot_id || event.subtype === 'bot_message') {
+    // Check for bot_id, bot_profile, or subtype
+    if (event.bot_id || event.subtype === 'bot_message' || event.bot_profile) {
       logger.slack.debug('Ignoring bot message', { 
         botId: event.bot_id,
         subtype: event.subtype,
-        text: event.text 
+        hasBotProfile: !!event.bot_profile,
+        text: typeof event.text === 'string' ? event.text.substring(0, 50) : undefined
       });
       return NextResponse.json({ ok: true });
     }
@@ -78,23 +109,48 @@ export async function POST(request: NextRequest) {
       event.text.includes(`<@${botUserId}>`);
     
     if (isAppMention || isMessageWithMention) {
+      const mentionEvent = event as unknown as { text: string; channel: string; ts: string; user?: string };
+      const eventKey = getEventKey(mentionEvent);
+      
+      // Check if we've already processed this event
+      if (isEventProcessed(eventKey)) {
+        logger.slack.debug('Duplicate event detected, ignoring', {
+          eventKey,
+          eventType: event.type,
+          channel: mentionEvent.channel,
+          ts: mentionEvent.ts
+        });
+        return NextResponse.json({ ok: true });
+      }
+      
+      // Mark event as processed
+      markEventProcessed(eventKey);
+      
       logger.slack.info('Bot mention detected', { 
         eventType: event.type,
         isAppMention,
         isMessageWithMention,
-        botUserId
+        botUserId,
+        eventKey
       });
-      const mentionEvent = event as unknown as { text: string; channel: string; ts: string; user?: string };
       logger.slack.info('Event details', {
         text: mentionEvent.text,
         channel: mentionEvent.channel,
         ts: mentionEvent.ts,
         user: mentionEvent.user
       });
-      // Process async (don't make Slack wait)
-      handleAppMention(mentionEvent).catch((error) => {
-        logger.slack.error('Error in handleAppMention', error as Error);
-      });
+      
+      // Process async but ensure it completes
+      // Return immediately to Slack, but keep function alive for async work
+      handleAppMention(mentionEvent)
+        .then(() => {
+          logger.slack.debug('handleAppMention completed successfully');
+        })
+        .catch((error) => {
+          logger.slack.error('Error in handleAppMention', error as Error);
+        });
+      
+      // Return immediately to Slack (within 3 seconds to avoid retries)
       return NextResponse.json({ ok: true });
     }
     
@@ -218,11 +274,22 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
   
   // Show thinking message
   logger.mention.debug('Posting thinking message');
-  const thinkingMsg = await slack.chat.postMessage({
-    channel,
-    thread_ts: threadTs,
-    text: `Asking ${agentData.displayName}'s agent...`
-  });
+  let thinkingMsg: { ts?: string; channel?: string } | null = null;
+  try {
+    thinkingMsg = await slack.chat.postMessage({
+      channel,
+      thread_ts: threadTs,
+      text: `Asking ${agentData.displayName}'s agent...`
+    });
+    logger.mention.debug('Thinking message posted', { 
+      messageTs: thinkingMsg.ts,
+      channel: thinkingMsg.channel 
+    });
+  } catch (error) {
+    logger.mention.error('Failed to post thinking message', error as Error);
+    // Continue anyway - we'll post a new message if update fails
+    thinkingMsg = null;
+  }
   
   try {
     // Build context for AI
@@ -259,34 +326,55 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
     if (agentData.data.jira.length > 0) sources.push('Jira');
     
     logger.mention.debug('Updating Slack message with answer');
-    // Update message with answer
-    await slack.chat.update({
-      channel,
-      ts: thinkingMsg.ts!,
-      text: answer,
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `🤖 *${agentData.displayName}'s Agent:*\n\n${answer}`
-          }
-        },
-        {
-          type: 'context',
-          elements: [
+    
+    // Update message with answer if we have a thinking message, otherwise post new
+    if (thinkingMsg && thinkingMsg.ts) {
+      try {
+        await slack.chat.update({
+          channel,
+          ts: thinkingMsg.ts,
+          text: answer,
+          blocks: [
             {
-              type: 'mrkdwn',
-              text: `📊 Demo Mode | 📎 Sources: ${sources.join(', ')}`
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `🤖 *${agentData.displayName}'s Agent:*\n\n${answer}`
+              }
+            },
+            {
+              type: 'context',
+              elements: [
+                {
+                  type: 'mrkdwn',
+                  text: `📎 Sources: ${sources.join(', ')}`
+                }
+              ]
             }
           ]
-        }
-      ]
-    });
-    logger.mention.info('Successfully updated Slack message', { 
-      channel, 
-      messageTs: thinkingMsg.ts 
-    });
+        });
+        logger.mention.info('Successfully updated Slack message', { 
+          channel, 
+          messageTs: thinkingMsg.ts 
+        });
+      } catch (updateError) {
+        logger.mention.error('Failed to update message, posting new message', updateError as Error);
+        // Fallback: post a new message if update fails
+        await slack.chat.postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: `🤖 *${agentData.displayName}'s Agent:*\n\n${answer}\n\n📎 Sources: ${sources.join(', ')}`
+        });
+      }
+    } else {
+      // If we don't have a thinking message, post a new one
+      logger.mention.debug('No thinking message to update, posting new message');
+      await slack.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: `🤖 *${agentData.displayName}'s Agent:*\n\n${answer}\n\n📎 Sources: ${sources.join(', ')}`
+      });
+    }
     
   } catch (error) {
     logger.mention.error('Error in handleAppMention', error as Error, {
@@ -294,11 +382,31 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
       targetUserId,
       question
     });
-    await slack.chat.update({
-      channel,
-      ts: thinkingMsg.ts!,
-      text: '❌ Sorry, I encountered an error. Please try again.'
-    });
+    
+    // Try to update the thinking message with error, or post new error message
+    if (thinkingMsg && thinkingMsg.ts) {
+      try {
+        await slack.chat.update({
+          channel,
+          ts: thinkingMsg.ts,
+          text: '❌ Sorry, I encountered an error. Please try again.'
+        });
+      } catch (updateError) {
+        logger.mention.error('Failed to update error message', updateError as Error);
+        // Fallback: post new error message
+        await slack.chat.postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: '❌ Sorry, I encountered an error. Please try again.'
+        });
+      }
+    } else {
+      await slack.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: '❌ Sorry, I encountered an error. Please try again.'
+      });
+    }
   }
 }
 
