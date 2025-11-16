@@ -9,7 +9,24 @@ import { getAgentData } from '@/lib/demo-data';
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  
+  // Check content type - Slack sends slash commands as form data, events as JSON
+  const contentType = request.headers.get('content-type') || '';
+  
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    // Parse form data for slash commands
+    const formData = await request.formData();
+    body = Object.fromEntries(formData.entries());
+  } else {
+    // Parse JSON for events and URL verification
+    try {
+      body = await request.json() as Record<string, unknown>;
+    } catch (error) {
+      console.error('Failed to parse request body:', error);
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+  }
   
   // Handle Slack URL verification
   if (body.type === 'url_verification') {
@@ -18,14 +35,18 @@ export async function POST(request: NextRequest) {
   
   // Handle slash command
   if (body.command === '/setup-agent') {
-    await handleSetupCommand(body);
+    await handleSetupCommand({
+      user_id: String(body.user_id || ''),
+      channel_id: String(body.channel_id || '')
+    });
     return NextResponse.json({ ok: true });
   }
   
   // Handle app mention
-  if (body.event?.type === 'app_mention') {
+  if (body.event && typeof body.event === 'object' && 'type' in body.event && body.event.type === 'app_mention') {
+    const event = body.event as unknown as { text: string; channel: string; ts: string };
     // Process async (don't make Slack wait)
-    handleAppMention(body.event).catch(console.error);
+    handleAppMention(event).catch(console.error);
     return NextResponse.json({ ok: true });
   }
   
