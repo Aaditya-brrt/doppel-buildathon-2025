@@ -9,6 +9,9 @@ import { logger } from '@/lib/logger';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
+// Allow function to run up to 60 seconds for async LLM processing
+export const maxDuration = 60;
+
 // Deduplication: Track processed events to prevent duplicate responses
 const processedEvents = new Set<string>();
 const MAX_CACHE_SIZE = 1000;
@@ -140,8 +143,8 @@ export async function POST(request: NextRequest) {
         user: mentionEvent.user
       });
       
-      // Process async but ensure it completes
-      // Return immediately to Slack, but keep function alive for async work
+      // Process async - the promise will keep the function alive
+      // Return immediately to Slack, but function stays alive for async work
       handleAppMention(mentionEvent)
         .then(() => {
           logger.slack.debug('handleAppMention completed successfully');
@@ -151,6 +154,7 @@ export async function POST(request: NextRequest) {
         });
       
       // Return immediately to Slack (within 3 seconds to avoid retries)
+      // The function will stay alive until handleAppMention completes
       return NextResponse.json({ ok: true });
     }
     
@@ -330,7 +334,7 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
     // Update message with answer if we have a thinking message, otherwise post new
     if (thinkingMsg && thinkingMsg.ts) {
       try {
-        await slack.chat.update({
+        const updateResult = await slack.chat.update({
           channel,
           ts: thinkingMsg.ts,
           text: answer,
@@ -355,25 +359,38 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
         });
         logger.mention.info('Successfully updated Slack message', { 
           channel, 
-          messageTs: thinkingMsg.ts 
+          messageTs: thinkingMsg.ts,
+          updateOk: updateResult.ok
         });
       } catch (updateError) {
-        logger.mention.error('Failed to update message, posting new message', updateError as Error);
+        logger.mention.error('Failed to update message, posting new message', updateError as Error, {
+          errorDetails: updateError instanceof Error ? updateError.message : String(updateError)
+        });
         // Fallback: post a new message if update fails
+        try {
+          await slack.chat.postMessage({
+            channel,
+            thread_ts: threadTs,
+            text: `🤖 *${agentData.displayName}'s Agent:*\n\n${answer}\n\n📎 Sources: ${sources.join(', ')}`
+          });
+          logger.mention.info('Posted new message as fallback');
+        } catch (postError) {
+          logger.mention.error('Failed to post fallback message', postError as Error);
+        }
+      }
+    } else {
+      // If we don't have a thinking message, post a new one
+      logger.mention.debug('No thinking message to update, posting new message');
+      try {
         await slack.chat.postMessage({
           channel,
           thread_ts: threadTs,
           text: `🤖 *${agentData.displayName}'s Agent:*\n\n${answer}\n\n📎 Sources: ${sources.join(', ')}`
         });
+        logger.mention.info('Posted new message (no thinking message to update)');
+      } catch (postError) {
+        logger.mention.error('Failed to post new message', postError as Error);
       }
-    } else {
-      // If we don't have a thinking message, post a new one
-      logger.mention.debug('No thinking message to update, posting new message');
-      await slack.chat.postMessage({
-        channel,
-        thread_ts: threadTs,
-        text: `🤖 *${agentData.displayName}'s Agent:*\n\n${answer}\n\n📎 Sources: ${sources.join(', ')}`
-      });
     }
     
   } catch (error) {
