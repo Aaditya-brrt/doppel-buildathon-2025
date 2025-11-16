@@ -149,63 +149,30 @@ async function handleAppMention(event: { text: string; channel: string; ts: stri
     if (agentData.data.slack.length > 0) sources.push('Slack');
     if (agentData.data.jira.length > 0) sources.push('Jira');
     
-    // Truncate answer if too long (Slack section text limit is 3000 chars)
-    // Reserve space for header and formatting
-    const maxAnswerLength = 2500;
-    const truncatedAnswer = answer.length > maxAnswerLength 
-      ? answer.substring(0, maxAnswerLength) + '...'
-      : answer;
-    
-    // Escape markdown special characters that might break the block
-    // Slack markdown is sensitive to triple backticks and code blocks
-    const escapedAnswer = truncatedAnswer
-      .replace(/```[\s\S]*?```/g, (match) => {
-        // Replace code blocks with inline code
-        const content = match.replace(/```/g, '').trim();
-        return `\`${content}\``;
-      })
-      .replace(/```/g, '`') // Replace any remaining triple backticks
-      .substring(0, 2500); // Ensure we don't exceed limits
-    
-    const sectionText = `🤖 *${agentData.displayName}'s Agent:*\n\n${escapedAnswer}`;
-    const sourcesText = sources.length > 0 
-      ? `📊 Demo Mode | 📎 Sources: ${sources.join(', ')}`
-      : '📊 Demo Mode';
-    
-    // Update message with answer - try blocks first, fallback to plain text
-    try {
-      await slack.chat.update({
-        channel,
-        ts: thinkingMsg.ts!,
-        text: truncatedAnswer, // Fallback plain text
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: sectionText.substring(0, 3000) // Ensure within Slack limit
-            }
-          },
-          {
-            type: 'context',
-            elements: [
-              {
-                type: 'mrkdwn',
-                text: sourcesText.substring(0, 2000) // Context block limit
-              }
-            ]
+    // Update message with answer
+    await slack.chat.update({
+      channel,
+      ts: thinkingMsg.ts!,
+      text: answer,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `🤖 *${agentData.displayName}'s Agent:*\n\n${answer}`
           }
-        ]
-      });
-    } catch (blockError) {
-      // If blocks fail, fallback to plain text
-      console.error('Block update failed, using plain text:', blockError);
-      await slack.chat.update({
-        channel,
-        ts: thinkingMsg.ts!,
-        text: `🤖 ${agentData.displayName}'s Agent:\n\n${truncatedAnswer}\n\n${sourcesText}`
-      });
-    }
+        },
+        {
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: `📊 Demo Mode | 📎 Sources: ${sources.join(', ')}`
+            }
+          ]
+        }
+      ]
+    });
     
   } catch (error) {
     console.error('Error:', error);
