@@ -11,16 +11,42 @@ function SetupContent() {
   const connected = searchParams.get('connected');
   const error = searchParams.get('error');
   
-  // Derive connected tools from URL param - no state needed
-  const connectedTools = connected ? new Set([connected]) : new Set<string>();
+  const [connectedTools, setConnectedTools] = useState<Set<string>>(new Set());
   const [connectingTool, setConnectingTool] = useState<string | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
 
-  // Clear URL parameter after showing success message
+  // Fetch connection status on mount
   useEffect(() => {
-    if (connected && userId) {
+    const fetchConnectionStatus = async () => {
+      if (!userId) {
+        setLoadingStatus(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/composio/status?user=${encodeURIComponent(userId)}`);
+        if (response.ok) {
+          const data = await response.json();
+          setConnectedTools(new Set(data.connectedTools || []));
+        }
+      } catch (err) {
+        console.error('Error fetching connection status:', err);
+      } finally {
+        setLoadingStatus(false);
+      }
+    };
+
+    fetchConnectionStatus();
+  }, [userId]);
+
+  // Update connected tools when a new connection is made
+  useEffect(() => {
+    if (connected) {
+      setConnectedTools(prev => new Set(prev).add(connected));
+      // Clear URL parameter after showing success message
       const timer = setTimeout(() => {
         window.history.replaceState({}, '', window.location.pathname + `?user=${userId}`);
-      }, 3000); // Clear after 3 seconds
+      }, 3000);
       return () => clearTimeout(timer);
     }
   }, [connected, userId]);
@@ -71,14 +97,10 @@ function SetupContent() {
           window.removeEventListener('message', messageHandler);
           
           if (event.data.success) {
+            // Update connected tools state
+            setConnectedTools(prev => new Set(prev).add(tool));
             // Show success message
-            const successDiv = document.createElement('div');
-            successDiv.className = 'mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-xl';
-            successDiv.innerHTML = `<p class="text-green-300 text-sm">✅ Successfully connected ${tool}!</p>`;
-            // You could use a proper notification system here
             alert(`✅ Successfully connected ${tool}!`);
-            // Refresh the page to show updated connection status
-            window.location.reload();
           } else {
             alert(`Failed to connect ${tool}. Please try again.`);
           }
@@ -137,40 +159,46 @@ function SetupContent() {
         )}
         
         <div className="space-y-4 sm:space-y-5 mb-8 sm:mb-10">
-          {tools.map(tool => {
-            const isConnected = connectedTools.has(tool);
-            const isConnecting = connectingTool === tool;
-            
-            return (
-              <div 
-                key={tool} 
-                className="border border-purple-500/20 rounded-xl p-5 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-black/20 hover:bg-purple-500/5 hover:border-purple-500/40 transition-all duration-300 group"
-              >
-                <div className="flex-1">
-                  <h3 className="font-semibold text-lg sm:text-xl mb-1 text-white group-hover:text-purple-300 transition-colors duration-300">
-                    {tool}
-                    {isConnected && <span className="ml-2 text-green-400">✓</span>}
-                  </h3>
-                  <p className="text-sm sm:text-base text-purple-200/70">
-                    {isConnected ? 'Connected' : `Access your ${tool.toLowerCase()} data`}
-                  </p>
-                </div>
-                <button 
-                  onClick={() => handleConnect(tool)}
-                  disabled={isConnecting || isConnected}
-                  className={`${
-                    isConnected 
-                      ? 'bg-green-500/20 text-green-300 border border-green-500/30 cursor-not-allowed' 
-                      : isConnecting
-                      ? 'bg-purple-500/50 text-purple-200 cursor-wait'
-                      : 'bg-[#8B5CF6] text-white hover:bg-[#7C3AED] hover:shadow-lg hover:shadow-purple-500/30 active:scale-95'
-                  } px-6 py-2.5 sm:px-8 sm:py-3 rounded-lg font-medium transition-all duration-300 w-full sm:w-auto`}
+          {loadingStatus ? (
+            <div className="text-center py-8">
+              <p className="text-purple-200/70">Loading connection status...</p>
+            </div>
+          ) : (
+            tools.map(tool => {
+              const isConnected = connectedTools.has(tool);
+              const isConnecting = connectingTool === tool;
+              
+              return (
+                <div 
+                  key={tool} 
+                  className="border border-purple-500/20 rounded-xl p-5 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-black/20 hover:bg-purple-500/5 hover:border-purple-500/40 transition-all duration-300 group"
                 >
-                  {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Connect'}
-                </button>
-              </div>
-            );
-          })}
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-lg sm:text-xl mb-1 text-white group-hover:text-purple-300 transition-colors duration-300">
+                      {tool}
+                      {isConnected && <span className="ml-2 text-green-400">✓</span>}
+                    </h3>
+                    <p className="text-sm sm:text-base text-purple-200/70">
+                      {isConnected ? 'Connected' : `Access your ${tool.toLowerCase()} data`}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => handleConnect(tool)}
+                    disabled={isConnecting || isConnected}
+                    className={`${
+                      isConnected 
+                        ? 'bg-green-500/20 text-green-300 border border-green-500/30 cursor-not-allowed' 
+                        : isConnecting
+                        ? 'bg-purple-500/50 text-purple-200 cursor-wait'
+                        : 'bg-[#8B5CF6] text-white hover:bg-[#7C3AED] hover:shadow-lg hover:shadow-purple-500/30 active:scale-95'
+                    } px-6 py-2.5 sm:px-8 sm:py-3 rounded-lg font-medium transition-all duration-300 w-full sm:w-auto`}
+                  >
+                    {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Connect'}
+                  </button>
+                </div>
+              );
+            })
+          )}
         </div>
         
         <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-5 sm:p-6 hover:border-purple-500/50 transition-all duration-300">
