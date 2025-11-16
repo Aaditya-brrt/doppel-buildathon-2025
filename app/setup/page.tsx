@@ -10,23 +10,28 @@ function SetupContent() {
   const userId = searchParams.get('user');
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
-      <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
-        <h1 className="text-4xl font-bold mb-4">Your AI Agent</h1>
-        <p className="text-gray-600 mb-8">
+    <div className="min-h-screen gradient-black-purple p-4 sm:p-6 lg:p-8">
+      <div className="max-w-2xl mx-auto bg-black/40 backdrop-blur-sm rounded-xl shadow-xl border border-purple-500/20 p-6 sm:p-8 lg:p-10">
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 text-white">
+          Your AI Agent
+        </h1>
+        <p className="text-purple-200/80 mb-8 sm:mb-10 text-base sm:text-lg leading-relaxed">
           Connect your accounts so your agent can help your team 24/7.
         </p>
         
-        <div className="space-y-4 mb-8">
+        <div className="space-y-4 sm:space-y-5 mb-8 sm:mb-10">
           {['Google Calendar', 'Slack', 'Jira', 'GitHub'].map(source => (
-            <div key={source} className="border rounded-lg p-4 flex justify-between items-center hover:bg-gray-50">
-              <div>
-                <h3 className="font-semibold">{source}</h3>
-                <p className="text-sm text-gray-500">Access your {source.toLowerCase()} data</p>
+            <div 
+              key={source} 
+              className="border border-purple-500/20 rounded-xl p-5 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-black/20 hover:bg-purple-500/5 hover:border-purple-500/40 transition-all duration-300 group"
+            >
+              <div className="flex-1">
+                <h3 className="font-semibold text-lg sm:text-xl mb-1 text-white group-hover:text-purple-300 transition-colors duration-300">{source}</h3>
+                <p className="text-sm sm:text-base text-purple-200/70">Access your {source.toLowerCase()} data</p>
               </div>
               <button 
                 onClick={() => alert('🎉 OAuth coming soon! For now, using demo data.')}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                className="bg-[#8B5CF6] text-white px-6 py-2.5 sm:px-8 sm:py-3 rounded-lg font-medium hover:bg-[#7C3AED] hover:shadow-lg hover:shadow-purple-500/30 active:scale-95 transition-all duration-300 w-full sm:w-auto"
               >
                 Connect
               </button>
@@ -34,9 +39,9 @@ function SetupContent() {
           ))}
         </div>
         
-        <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-          <p className="text-sm text-gray-600">
-            Try it: <code className="bg-gray-100 px-2 py-1 rounded">@Team Agent Bot ask @yourname what are you working on?</code>
+        <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-5 sm:p-6 hover:border-purple-500/50 transition-all duration-300">
+          <p className="text-sm sm:text-base text-purple-200/90 leading-relaxed">
+            Try it: <code className="bg-black/60 border border-purple-500/30 text-purple-300 px-3 py-1.5 rounded-lg font-mono text-xs sm:text-sm ml-1">@Team Agent Bot ask @yourname what are you working on?</code>
           </p>
         </div>
       </div>
@@ -47,10 +52,10 @@ function SetupContent() {
 export default function SetupPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
-        <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
-          <h1 className="text-4xl font-bold mb-4">Your AI Agent</h1>
-          <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen gradient-black-purple p-4 sm:p-6 lg:p-8">
+        <div className="max-w-2xl mx-auto bg-black/40 backdrop-blur-sm rounded-xl shadow-xl border border-purple-500/20 p-6 sm:p-8 lg:p-10">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 text-white">Your AI Agent</h1>
+          <p className="text-purple-200/80">Loading...</p>
         </div>
       </div>
     }>

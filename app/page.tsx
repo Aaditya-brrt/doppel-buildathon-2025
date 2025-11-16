@@ -2,19 +2,19 @@
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 flex items-center justify-center p-4">
-      <div className="max-w-4xl">
-        <div className="text-center mb-12">
-          <h1 className="text-6xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            🤖 Team Agent
+    <div className="min-h-screen gradient-black-purple flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      <div className="max-w-4xl w-full">
+        <div className="text-center mb-12 lg:mb-16">
+          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
+            <span className="gradient-purple-text">🤖 Team Agent</span>
           </h1>
-          <p className="text-2xl text-gray-600">
+          <p className="text-xl sm:text-2xl text-purple-200 font-light leading-relaxed">
             Your AI teammate that works while you sleep
           </p>
         </div>
         
-        <div className="bg-white rounded-2xl shadow-2xl p-8 mb-8">
-          <div className="space-y-6">
+        <div className="bg-black/40 backdrop-blur-sm rounded-xl shadow-xl border border-purple-500/20 p-6 sm:p-8 lg:p-10 mb-8 lg:mb-12 hover:border-purple-500/40 transition-all duration-300">
+          <div className="space-y-6 sm:space-y-8">
             <FeatureCard
               icon="⏰"
               title="Works Across Time Zones"
@@ -34,8 +34,8 @@ export default function Home() {
         </div>
         
         <div className="text-center">
-          <p className="text-gray-500 mb-4">Ready to try it?</p>
-          <code className="bg-gray-800 text-green-400 px-4 py-2 rounded-lg inline-block">
+          <p className="text-purple-300 mb-6 text-lg font-medium">Ready to try it?</p>
+          <code className="bg-black/60 border border-purple-500/30 text-purple-300 px-6 py-3 rounded-lg inline-block font-mono text-sm sm:text-base hover:border-purple-500/50 hover:bg-black/80 transition-all duration-300 shadow-lg">
             Type /setup-agent in Slack
           </code>
         </div>
@@ -46,11 +46,11 @@ export default function Home() {
 
 function FeatureCard({ icon, title, description }: { icon: string; title: string; description: string }) {
   return (
-    <div className="flex items-start gap-4">
-      <div className="text-4xl">{icon}</div>
-      <div>
-        <h3 className="font-bold text-lg mb-1">{title}</h3>
-        <p className="text-gray-600">{description}</p>
+    <div className="flex items-start gap-4 sm:gap-6 p-4 rounded-lg hover:bg-purple-500/5 transition-all duration-300 group">
+      <div className="text-4xl sm:text-5xl group-hover:scale-110 transition-transform duration-300">{icon}</div>
+      <div className="flex-1">
+        <h3 className="font-bold text-lg sm:text-xl mb-2 text-white group-hover:text-purple-300 transition-colors duration-300">{title}</h3>
+        <p className="text-purple-200/80 leading-relaxed text-base sm:text-lg">{description}</p>
       </div>
     </div>
   );
